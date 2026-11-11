@@ -1,0 +1,607 @@
+// Schéma VHOA — PostgreSQL (Neon).
+// Les compteurs (likes, abonnés…) sont dénormalisés pour que le feed se lise sans agrégations.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/* ---------- Utilisateurs & auth ---------- */
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+}
+
+model User {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  username    String     @unique @db.VarChar(30)
+  displayName String     @db.VarChar(50)
+  bio         String     @default("") @db.VarChar(160)
+  avatarKey   String?
+  role        Role       @default(USER)
+  status      UserStatus @default(ACTIVE)
+
+  /// Identifiant de connexion email/mot de passe (en minuscules).
+  email        String? @unique @db.VarChar(254)
+  passwordHash String?
+  appleSub     String? @unique
+  googleSub    String? @unique
+  /// Email remonté par Apple/Google, informatif uniquement (jamais utilisé pour lier des comptes).
+  socialEmail  String? @db.VarChar(254)
+
+  /// Date à laquelle l'utilisateur a confirmé avoir 15 ans ou plus.
+  ageConfirmedAt DateTime
+
+  /// Incrémenté pour invalider tous les jetons (déconnexion partout, bannissement, mot de passe changé).
+  tokenVersion   Int       @default(0)
+  failedLogins   Int       @default(0)
+  lockedUntil    DateTime?
+
+  premiumUntil DateTime?
+
+  notifyInteractions Boolean @default(true)
+  notifyThemes       Boolean @default(true)
+  notifyProgress     Boolean @default(true)
+
+  // Série hebdomadaire (semaines ISO, fuseau Europe/Paris).
+  streakCurrent       Int       @default(0)
+  streakBest          Int       @default(0)
+  streakFreezes       Int       @default(0)
+  /// Lundi de la dernière semaine comptée dans la série (postée ou gelée).
+  streakLastWeek      DateTime? @db.Date
+  freezeGrantedMonth  String?   @db.VarChar(7)
+
+  postsCount     Int @default(0)
+  followersCount Int @default(0)
+  followingCount Int @default(0)
+  convincedTotal Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens  RefreshToken[]
+  posts          Post[]
+  likes          Like[]
+  saves          Save[]
+  convinced      Convinced[]
+  comments       Comment[]
+  commentLikes   CommentLike[]
+  following      Follow[]          @relation("follower")
+  followers      Follow[]          @relation("following")
+  blocking       Block[]           @relation("blocker")
+  blockedBy      Block[]           @relation("blocked")
+  notInterested  NotInterested[]
+  views          PostView[]
+  reports        Report[]
+  appeals        Appeal[]
+  analyses       Analysis[]
+  notifications  Notification[]    @relation("recipient")
+  pushTokens     PushToken[]
+  badges         UserBadge[]
+  streakWeeks    StreakWeek[]
+
+  @@index([createdAt])
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @db.Uuid
+  /// SHA-256 du jeton : le jeton lui-même n'est jamais stocké.
+  tokenHash  String    @unique
+  /// Tous les jetons issus d'une même connexion. Réutiliser un jeton déjà tourné révoque toute la famille.
+  familyId   String    @db.Uuid
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  usedAt     DateTime?
+  userAgent  String?   @db.VarChar(200)
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+model PushToken {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique
+  platform  String   @db.VarChar(10)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/* ---------- Posts ---------- */
+
+enum MediaType {
+  VIDEO
+  AUDIO
+}
+
+enum Category {
+  DISCOURS
+  PLAIDOIRIE
+  DEBAT
+  STORYTELLING
+  SLAM
+  PITCH
+  IMPRO
+}
+
+/// Choix fait à la création : publier, garder en brouillon ou n'envoyer qu'au coach IA.
+enum PublishMode {
+  PUBLIC
+  DRAFT
+  AI
+}
+
+enum PostStatus {
+  /// En attente de l'envoi du fichier vers R2.
+  UPLOADING
+  /// Conversion, transcription et modération en cours.
+  PROCESSING
+  PUBLISHED
+  DRAFT
+  /// Visible uniquement par l'auteur (coach IA).
+  PRIVATE
+  /// Refusé par la modération automatique.
+  REJECTED
+  /// Supprimé par la modération humaine.
+  REMOVED
+  FAILED
+}
+
+model Post {
+  id        String      @id @default(uuid(7)) @db.Uuid
+  authorId  String      @db.Uuid
+  type      MediaType
+  mode      PublishMode
+  status    PostStatus  @default(UPLOADING)
+  title     String      @default("") @db.VarChar(100)
+  category  Category?
+  hashtags  String[]    @default([])
+  themeId   String?     @db.Uuid
+
+  /// Préfixe secret des fichiers sur R2 (non devinable).
+  mediaPrefix  String
+  rawKey       String?
+  rawMime      String?   @db.VarChar(60)
+  mediaKey     String?
+  thumbnailKey String?
+  duration     Float     @default(0)
+  width        Int?
+  height       Int?
+
+  transcriptText String?
+  /// Sous-titres [{ start, end, text }].
+  transcript     Json?
+  /// Mots horodatés [{ w, s, e }] pour le coach IA.
+  words          Json?
+
+  moderationReason String? @db.VarChar(200)
+  processingError  String? @db.VarChar(300)
+
+  likesCount     Int   @default(0)
+  commentsCount  Int   @default(0)
+  sharesCount    Int   @default(0)
+  savesCount     Int   @default(0)
+  convincedCount Int   @default(0)
+  viewsCount     Int   @default(0)
+  /// Score « tendance » recalculé périodiquement, sert au feed « Pour toi ».
+  hotScore       Float @default(0)
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  author        User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  theme         Theme?          @relation(fields: [themeId], references: [id], onDelete: SetNull)
+  likes         Like[]
+  saves         Save[]
+  convinced     Convinced[]
+  comments      Comment[]
+  notInterested NotInterested[]
+  views         PostView[]
+  analyses      Analysis[]
+  winners       ThemeWinner[]
+
+  @@index([status, hotScore(sort: Desc)])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([authorId, status, createdAt(sort: Desc)])
+  @@index([themeId, status, convincedCount(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+model Like {
+  userId    String   @db.Uuid
+  postId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@index([postId])
+}
+
+model Save {
+  userId    String   @db.Uuid
+  postId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([postId])
+}
+
+/// Vote « Convaincu » sur un post participant à un thème ouvert.
+model Convinced {
+  userId    String   @db.Uuid
+  postId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@index([postId])
+}
+
+model PostView {
+  userId   String   @db.Uuid
+  postId   String   @db.Uuid
+  viewedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@index([viewedAt])
+}
+
+model NotInterested {
+  userId    String   @db.Uuid
+  postId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+}
+
+model Comment {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  postId     String   @db.Uuid
+  authorId   String   @db.Uuid
+  text       String   @db.VarChar(500)
+  likesCount Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  post   Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  likes  CommentLike[]
+
+  @@index([postId, createdAt(sort: Desc)])
+  @@index([authorId])
+}
+
+model CommentLike {
+  userId    String   @db.Uuid
+  commentId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, commentId])
+  @@index([commentId])
+}
+
+/* ---------- Social ---------- */
+
+model Follow {
+  followerId  String   @db.Uuid
+  followingId String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+}
+
+model Block {
+  blockerId String   @db.Uuid
+  blockedId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  blocker User @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+/* ---------- Modération ---------- */
+
+enum ReportTarget {
+  POST
+  USER
+  COMMENT
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  reporterId String       @db.Uuid
+  targetType ReportTarget
+  targetId   String       @db.Uuid
+  reason     String       @db.VarChar(40)
+  details    String?      @db.VarChar(500)
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+
+  reporter User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+}
+
+model Appeal {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  userId    String       @db.Uuid
+  postId    String?      @db.Uuid
+  message   String       @db.VarChar(1000)
+  status    ReportStatus @default(OPEN)
+  createdAt DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([userId])
+}
+
+/* ---------- Thèmes ---------- */
+
+enum ThemePeriod {
+  WEEKLY
+  MONTHLY
+}
+
+enum ThemeStatus {
+  /// Proposé par GPT ou l'admin, pas encore commencé (modifiable).
+  SCHEDULED
+  /// En cours : participation et vote « Convaincu » ouverts.
+  ACTIVE
+  CLOSED
+}
+
+model Theme {
+  id                String      @id @default(uuid(7)) @db.Uuid
+  period            ThemePeriod
+  subject           String      @db.VarChar(140)
+  status            ThemeStatus @default(SCHEDULED)
+  startsAt          DateTime
+  endsAt            DateTime
+  /// true si le sujet a été généré par GPT et pas encore relu par un admin.
+  aiGenerated       Boolean     @default(false)
+  participantsCount Int         @default(0)
+  createdAt         DateTime    @default(now())
+
+  posts   Post[]
+  winners ThemeWinner[]
+
+  @@unique([period, startsAt])
+  @@index([status, endsAt])
+}
+
+model ThemeWinner {
+  themeId String @db.Uuid
+  rank    Int
+  postId  String @db.Uuid
+  votes   Int
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([themeId, rank])
+}
+
+/* ---------- Coach IA ---------- */
+
+enum AnalysisStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
+model Analysis {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  userId    String         @db.Uuid
+  postId    String         @db.Uuid
+  status    AnalysisStatus @default(PENDING)
+  /// Mois de décompte du quota gratuit (YYYY-MM).
+  month     String         @db.VarChar(7)
+  detailed  Boolean        @default(false)
+
+  wordsPerMinute  Float?
+  wordCount       Int?
+  fillerCount     Int?
+  /// [{ word, count }]
+  fillers         Json?
+  silenceCount    Int?
+  silenceTotal    Float?
+  longestSilence  Float?
+  speakingRatio   Float?
+  /// Retour court sur la structure (tout le monde).
+  structure       String?   @db.VarChar(600)
+  /// Retour détaillé Premium : { argumentation, rhythm, tips[] }.
+  details         Json?
+  /// Comparaison Premium avec les analyses précédentes.
+  comparison      Json?
+  error           String?   @db.VarChar(300)
+  createdAt       DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([userId, month])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([postId])
+}
+
+/* ---------- Alertes & progression ---------- */
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  FOLLOW
+  CONVINCED
+  THEME_NEW
+  THEME_RESULT
+  BADGE
+  STREAK_RISK
+  MODERATION
+  ANALYSIS_READY
+}
+
+model Notification {
+  id         String           @id @default(uuid(7)) @db.Uuid
+  userId     String           @db.Uuid
+  type       NotificationType
+  /// Les 3 derniers acteurs (affichage), plus récent en premier.
+  actorIds   String[]         @default([]) @db.Uuid
+  actorCount Int              @default(0)
+  postId     String?          @db.Uuid
+  text       String?          @db.VarChar(200)
+  rank       Int?
+  /// Regroupe les alertes similaires non lues (ex. likes sur un même post).
+  groupKey   String?
+  read       Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  user User @relation("recipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@index([userId, read])
+  @@index([userId, groupKey, read])
+}
+
+model UserBadge {
+  userId     String   @db.Uuid
+  badgeId    String   @db.VarChar(20)
+  unlockedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, badgeId])
+}
+
+enum StreakWeekStatus {
+  POSTED
+  FROZEN
+}
+
+model StreakWeek {
+  userId    String           @db.Uuid
+  /// Lundi de la semaine (Europe/Paris).
+  weekStart DateTime         @db.Date
+  status    StreakWeekStatus
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, weekStart])
+}
+
+/* ---------- Infra ---------- */
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// File de tâches en base (pas besoin de Redis) : traitement des médias, analyses, push…
+model Job {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  type      String    @db.VarChar(40)
+  payload   Json
+  status    JobStatus @default(QUEUED)
+  attempts  Int       @default(0)
+  runAt     DateTime  @default(now())
+  lockedAt  DateTime?
+  lastError String?   @db.VarChar(500)
+  createdAt DateTime  @default(now())
+
+  @@index([status, runAt])
+}
+
+/// Événements RevenueCat déjà traités (idempotence des webhooks).
+model BillingEvent {
+  id        String   @id
+  userId    String?  @db.Uuid
+  type      String   @db.VarChar(40)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Verrou des tâches planifiées (une seule instance les exécute, compatible avec le pooler Neon).
+model CronLock {
+  name        String   @id @db.VarChar(40)
+  lockedUntil DateTime
+}
+
+/* ---------- Liste d'attente (site vhoa-web) ---------- */
+
+enum WaitlistPlatform {
+  IOS
+  ANDROID
+}
+
+/// Inscriptions à la liste d'attente, écrites par le site vitrine (vhoa-web) en SQL direct :
+/// l'id et les dates ont donc des valeurs par défaut côté base.
+model WaitlistEntry {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Email tel que saisi (minuscules, sans espaces).
+  email     String           @db.VarChar(254)
+  /// Forme canonique pour dédoublonner (Gmail sans points, sans « +alias »).
+  emailKey  String           @unique @db.VarChar(254)
+  platform  WaitlistPlatform
+  /// Empreinte HMAC de l'IP (jamais l'IP brute) pour limiter les inscriptions en rafale.
+  ipHash    String           @db.VarChar(64)
+  source    String           @default("web") @db.VarChar(30)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @default(now())
+
+  @@index([ipHash, createdAt])
+}
