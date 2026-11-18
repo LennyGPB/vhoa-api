@@ -17,6 +17,7 @@ import { AuthUser } from '../common/auth.decorators';
 import { clampLimit, decodeCursor, encodeCursor } from '../common/cursor';
 import { JwtAuthGuard } from '../common/guards';
 import {
+  effectOf,
   POST_CARD_SELECT,
   PostRow,
   publicUrl,
@@ -30,6 +31,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SocialService } from '../posts/social.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProgressService } from '../progress/progress.service';
+import { StripeBillingService } from '../billing/stripe.service';
 import {
   AppealDto,
   AvatarConfirmDto,
@@ -57,6 +59,7 @@ export class UsersService {
     private readonly notifications: NotificationsService,
     private readonly openai: OpenAiService,
     private readonly coach: CoachService,
+    private readonly stripe: StripeBillingService,
     private readonly jobs: JobsService,
   ) {}
 
@@ -75,6 +78,8 @@ export class UsersService {
       displayName: u.displayName,
       bio: u.bio,
       avatarUrl: publicUrl(u.avatarKey),
+      avatarEffect: effectOf(u),
+      canUseEffects: u.role === 'ADMIN' || isPremium,
       email: u.email ?? u.socialEmail ?? null,
       providers: [
         u.passwordHash && 'password',
@@ -100,6 +105,20 @@ export class UsersService {
       unreadNotifications,
       createdAt: u.createdAt.toISOString(),
     };
+  }
+
+  /** Choisit (ou retire, avec null) l'effet autour de la photo : Premium et admin uniquement. */
+  async setAvatarEffect(user: AuthUser, effect: string | null) {
+    if (effect !== null && user.role !== 'ADMIN' && !user.isPremium)
+      throw new ForbiddenException({
+        code: 'PREMIUM_REQUIRED',
+        message: 'Les effets de profil sont réservés à Premium',
+      });
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { avatarEffect: effect },
+    });
+    return { avatarEffect: effect };
   }
 
   async updateMe(userId: string, dto: UpdateMeDto) {
@@ -230,6 +249,8 @@ export class UsersService {
         displayName: true,
         bio: true,
         avatarKey: true,
+        avatarEffect: true,
+        role: true,
         status: true,
         followersCount: true,
         followingCount: true,
@@ -524,6 +545,9 @@ export class UsersService {
         });
       }
     }
+    // L'abonnement Premium est arrêté avant tout : jamais de prélèvement sur un compte supprimé.
+    await this.stripe.cancelAllForDeletion(user.id);
+
     const prefixes = await this.prisma.post.findMany({
       where: { authorId: user.id },
       select: { mediaPrefix: true },

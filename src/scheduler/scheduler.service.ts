@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { addDays } from '../common/time';
 import { env } from '../config/env';
 import { HOT_SCORE_SQL } from '../posts/post-lifecycle.service';
+import { StripeBillingService } from '../billing/stripe.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProgressService } from '../progress/progress.service';
 import { ThemesService } from '../themes/themes.service';
@@ -24,6 +25,7 @@ export class SchedulerService implements OnApplicationBootstrap {
     private readonly themes: ThemesService,
     private readonly progress: ProgressService,
     private readonly cleanup: MediaCleanup,
+    private readonly stripe: StripeBillingService,
   ) {}
 
   onApplicationBootstrap() {
@@ -61,6 +63,14 @@ export class SchedulerService implements OnApplicationBootstrap {
       await this.themes.ensureUpcoming();
       await this.themes.activateDue();
     });
+  }
+
+  /** Filet de sécurité des abonnements Stripe (renouvellements dont le webhook se serait perdu). */
+  @Cron('20 * * * *', { timeZone: TZ })
+  async stripeResync() {
+    await this.locked('stripe-resync', 50 * 60_000, () =>
+      this.stripe.resyncExpiring(),
+    );
   }
 
   /** Score tendance des posts récents (le feed « Pour toi » se lit ensuite sans calcul). */

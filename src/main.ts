@@ -15,6 +15,8 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
+    // Corps brut conservé pour vérifier la signature des webhooks Stripe.
+    rawBody: true,
     logger:
       env().NODE_ENV === 'production'
         ? ['log', 'warn', 'error']

@@ -25,8 +25,8 @@ import { ProgressService } from '../progress/progress.service';
 
 /** Analyses gratuites par mois. */
 export const FREE_MONTHLY_ANALYSES = 1;
-/** Garde-fou anti-abus pour les abonnés (illimité « normal »). */
-const PREMIUM_DAILY_CAP = 30;
+/** Analyses incluses chaque mois dans Premium (limite d'usage des CGV). */
+export const PREMIUM_MONTHLY_ANALYSES = 60;
 
 const SYSTEM_PROMPT = `Tu es le coach d'éloquence de VHOA, une app où des jeunes (15 ans et plus) s'entraînent à la prise de parole.
 Tu tutoies, tu es bienveillant, concret et direct. Pas de jargon, pas de flatterie creuse.
@@ -117,16 +117,17 @@ export class CoachService implements OnModuleInit {
   }
 
   async quota(user: AuthUser) {
-    if (user.isPremium)
-      return { used: 0, total: null, remaining: null, isPremium: true };
+    const total = user.isPremium
+      ? PREMIUM_MONTHLY_ANALYSES
+      : FREE_MONTHLY_ANALYSES;
     const used = await this.prisma.analysis.count({
       where: { userId: user.id, month: monthKey(), status: { not: 'FAILED' } },
     });
     return {
       used,
-      total: FREE_MONTHLY_ANALYSES,
-      remaining: Math.max(0, FREE_MONTHLY_ANALYSES - used),
-      isPremium: false,
+      total,
+      remaining: Math.max(0, total - used),
+      isPremium: user.isPremium,
     };
   }
 
@@ -144,40 +145,30 @@ export class CoachService implements OnModuleInit {
       });
       if (existing) return existing.id;
 
-      if (user.isPremium) {
-        const today = await tx.analysis.count({
-          where: {
-            userId: user.id,
-            createdAt: { gte: new Date(Date.now() - 24 * 3600_000) },
+      const used = await tx.analysis.count({
+        where: {
+          userId: user.id,
+          month: monthKey(),
+          status: { not: 'FAILED' },
+        },
+      });
+      if (user.isPremium && used >= PREMIUM_MONTHLY_ANALYSES) {
+        throw new HttpException(
+          {
+            code: 'AI_QUOTA_EXCEEDED',
+            message: `Tu as utilisé tes ${PREMIUM_MONTHLY_ANALYSES} analyses du mois. Elles reviennent le 1er du mois prochain.`,
           },
-        });
-        if (today >= PREMIUM_DAILY_CAP) {
-          throw new HttpException(
-            {
-              code: 'DAILY_LIMIT',
-              message: 'Limite quotidienne atteinte, reviens demain',
-            },
-            HttpStatus.TOO_MANY_REQUESTS,
-          );
-        }
-      } else {
-        const used = await tx.analysis.count({
-          where: {
-            userId: user.id,
-            month: monthKey(),
-            status: { not: 'FAILED' },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      if (!user.isPremium && used >= FREE_MONTHLY_ANALYSES) {
+        throw new HttpException(
+          {
+            code: 'AI_QUOTA_EXCEEDED',
+            message: `Tu as utilisé ton analyse gratuite du mois. Passe Premium pour ${PREMIUM_MONTHLY_ANALYSES} analyses par mois.`,
           },
-        });
-        if (used >= FREE_MONTHLY_ANALYSES) {
-          throw new HttpException(
-            {
-              code: 'AI_QUOTA_EXCEEDED',
-              message:
-                'Tu as utilisé ton analyse gratuite du mois. Passe Premium pour des analyses illimitées.',
-            },
-            HttpStatus.PAYMENT_REQUIRED,
-          );
-        }
+          HttpStatus.PAYMENT_REQUIRED,
+        );
       }
 
       const analysis = await tx.analysis.create({

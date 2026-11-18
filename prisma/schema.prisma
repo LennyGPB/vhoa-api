@@ -30,6 +30,8 @@ model User {
   displayName String     @db.VarChar(50)
   bio         String     @default("") @db.VarChar(160)
   avatarKey   String?
+  /// Effet Premium autour de la photo (liquid, wave…). Réservé aux comptes Premium et admin.
+  avatarEffect String?   @db.VarChar(20)
   role        Role       @default(USER)
   status      UserStatus @default(ACTIVE)
 
@@ -50,6 +52,8 @@ model User {
   lockedUntil    DateTime?
 
   premiumUntil DateTime?
+  /// Client Stripe (abonnement Premium acheté sur le site).
+  stripeCustomerId String? @unique @db.VarChar(64)
 
   notifyInteractions Boolean @default(true)
   notifyThemes       Boolean @default(true)
@@ -565,7 +569,7 @@ model Job {
   @@index([status, runAt])
 }
 
-/// Événements RevenueCat déjà traités (idempotence des webhooks).
+/// Événements RevenueCat et Stripe déjà traités (idempotence des webhooks).
 model BillingEvent {
   id        String   @id
   userId    String?  @db.Uuid

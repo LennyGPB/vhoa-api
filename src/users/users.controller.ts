@@ -14,9 +14,15 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 
-import { type AuthUser, CurrentUser } from '../common/auth.decorators';
+import {
+  ANONYMOUS_VIEWER,
+  type AuthUser,
+  CurrentUser,
+  Public,
+} from '../common/auth.decorators';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
+  AvatarEffectDto,
   AppealDto,
   AvatarConfirmDto,
   AvatarUploadDto,
@@ -49,6 +55,11 @@ export class UsersController {
   @Throttle({ default: { limit: 20, ttl: HOUR } })
   updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateMeDto) {
     return this.users.updateMe(user.id, dto);
+  }
+
+  @Patch('me/effect')
+  setEffect(@CurrentUser() user: AuthUser, @Body() dto: AvatarEffectDto) {
+    return this.users.setAvatarEffect(user, dto.effect ?? null);
   }
 
   @Patch('me/settings')
@@ -147,19 +158,30 @@ export class UsersController {
 
   /* ---------- Profils ---------- */
 
+  /** Public : profil d'un orateur sur le site. */
+  @Public()
   @Get('users/:id')
-  profile(@CurrentUser() user: AuthUser, @Param('id', uuid) id: string) {
-    return this.users.profile(user.id, id);
+  profile(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param('id', uuid) id: string,
+  ) {
+    return this.users.profile(user?.id ?? ANONYMOUS_VIEWER, id);
   }
 
+  @Public()
   @Get('users/:id/posts')
   posts(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
     @Param('id', uuid) id: string,
     @Query('cursor') cursor?: string,
     @Query('limit', optionalInt) limit?: number,
   ) {
-    return this.users.userPosts(user.id, id, cursor, limit);
+    return this.users.userPosts(
+      user?.id ?? ANONYMOUS_VIEWER,
+      id,
+      cursor,
+      limit,
+    );
   }
 
   @Put('users/:id/follow')

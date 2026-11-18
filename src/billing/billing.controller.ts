@@ -72,7 +72,7 @@ export class BillingService {
       : new Date('2999-01-01T00:00:00Z');
   }
 
-  private async setPremium(userId: string, until: Date | null) {
+  async setPremium(userId: string, until: Date | null) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { premiumUntil: true },

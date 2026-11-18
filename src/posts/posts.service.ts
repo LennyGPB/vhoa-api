@@ -16,6 +16,7 @@ import { CoachService } from '../coach/coach.service';
 import { AuthUser } from '../common/auth.decorators';
 import { clampLimit, decodeCursor, encodeCursor } from '../common/cursor';
 import {
+  AUTHOR_SELECT,
   categoryFromLabel,
   POST_SELECT,
   PostRow,
@@ -595,7 +596,7 @@ export class PostsService {
         text: true,
         likesCount: true,
         createdAt: true,
-        author: { select: { id: true, username: true, avatarKey: true } },
+        author: { select: AUTHOR_SELECT },
         post: { select: { authorId: true } },
       },
     });
@@ -640,7 +641,7 @@ export class PostsService {
           text: true,
           likesCount: true,
           createdAt: true,
-          author: { select: { id: true, username: true, avatarKey: true } },
+          author: { select: AUTHOR_SELECT },
         },
       }),
       this.prisma.post.update({

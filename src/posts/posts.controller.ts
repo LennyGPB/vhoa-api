@@ -11,12 +11,18 @@ import {
   Post,
   Put,
   Query,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsOptional } from 'class-validator';
 
 import { CoachService } from '../coach/coach.service';
-import { type AuthUser, CurrentUser } from '../common/auth.decorators';
+import {
+  ANONYMOUS_VIEWER,
+  type AuthUser,
+  CurrentUser,
+  Public,
+} from '../common/auth.decorators';
 import { FeedService } from './feed.service';
 import {
   CommentDto,
@@ -48,16 +54,20 @@ export class PostsController {
 
   /* ---------- Feed & Explorer ---------- */
 
+  /** Public pour « Pour toi » (visiteurs du site) ; « Abonnements » demande un compte. */
+  @Public()
   @Get('feed')
   getFeed(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
     @Query('tab') tab?: string,
     @Query('cursor') cursor?: string,
     @Query('limit', optionalInt) limit?: number,
   ) {
-    return tab === 'following'
-      ? this.feed.following(user.id, cursor, limit)
-      : this.feed.forYou(user.id, cursor, limit);
+    if (tab === 'following') {
+      if (!user) throw new UnauthorizedException('Connexion requise');
+      return this.feed.following(user.id, cursor, limit);
+    }
+    return this.feed.forYou(user?.id ?? ANONYMOUS_VIEWER, cursor, limit);
   }
 
   @Get('explore')
@@ -91,9 +101,14 @@ export class PostsController {
 
   /* ---------- Post ---------- */
 
+  /** Public : page d'une prise sur le site (liens partagés). */
+  @Public()
   @Get('posts/:id')
-  get(@CurrentUser() user: AuthUser, @Param('id', uuid) id: string) {
-    return this.posts.get(user.id, id);
+  get(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param('id', uuid) id: string,
+  ) {
+    return this.posts.get(user?.id ?? ANONYMOUS_VIEWER, id);
   }
 
   @Patch('posts/:id')
@@ -179,14 +194,21 @@ export class PostsController {
 
   /* ---------- Commentaires ---------- */
 
+  /** Lecture publique (visiteurs du site) ; écrire demande un compte. */
+  @Public()
   @Get('posts/:id/comments')
   comments(
-    @CurrentUser() user: AuthUser,
+    @CurrentUser() user: AuthUser | undefined,
     @Param('id', uuid) id: string,
     @Query('cursor') cursor?: string,
     @Query('limit', optionalInt) limit?: number,
   ) {
-    return this.posts.listComments(user.id, id, cursor, limit);
+    return this.posts.listComments(
+      user?.id ?? ANONYMOUS_VIEWER,
+      id,
+      cursor,
+      limit,
+    );
   }
 
   @Post('posts/:id/comments')

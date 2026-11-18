@@ -14,6 +14,8 @@ import {
   BillingController,
   BillingService,
 } from './billing/billing.controller';
+import { StripeController } from './billing/stripe.controller';
+import { StripeBillingService } from './billing/stripe.service';
 import { CoachService } from './coach/coach.service';
 import { Public } from './common/auth.decorators';
 import { JwtAuthGuard, RolesGuard, UserThrottlerGuard } from './common/guards';
@@ -78,6 +80,7 @@ class HealthController {
     PostsController,
     ThemesController,
     BillingController,
+    StripeController,
     AdminController,
   ],
   providers: [
@@ -101,6 +104,7 @@ class HealthController {
     UsersService,
     ThemesService,
     BillingService,
+    StripeBillingService,
     AdminService,
     MediaCleanup,
     SchedulerService,

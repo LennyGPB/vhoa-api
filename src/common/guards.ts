@@ -1,3 +1,6 @@
+import { timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
+
 import {
   CanActivate,
   ExecutionContext,
@@ -9,6 +12,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
+import { env } from '../config/env';
 import { Role } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthedRequest, AuthUser, IS_PUBLIC, ROLES } from './auth.decorators';
@@ -133,13 +137,32 @@ export class RolesGuard implements CanActivate {
   }
 }
 
-/** Limite par utilisateur connecté, sinon par adresse IP (derrière le proxy Railway). */
+/**
+ * IP du visiteur transmise par le serveur du site web (vhoa-web), qui appelle l'API à sa place.
+ * Acceptée uniquement avec la bonne clé BFF_SECRET (comparaison en temps constant) :
+ * personne d'autre ne peut se faire passer pour une autre IP.
+ */
+function forwardedClientIp(req: {
+  headers?: Record<string, string | string[] | undefined>;
+}): string | null {
+  const secret = env().BFF_SECRET;
+  if (!secret) return null;
+  const key = req.headers?.['x-vhoa-bff-key'];
+  const ip = req.headers?.['x-vhoa-client-ip'];
+  if (typeof key !== 'string' || typeof ip !== 'string') return null;
+  const a = Buffer.from(key);
+  const b = Buffer.from(secret);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  return isIP(ip) ? ip : null;
+}
+
+/** Limite par utilisateur connecté, sinon par adresse IP (derrière le proxy Railway ou le site web). */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
   protected getTracker(req: Record<string, any>): Promise<string> {
     const user = (req as AuthedRequest).user;
-    return Promise.resolve(
-      user ? `u:${user.id}` : `ip:${(req as AuthedRequest).ip ?? 'unknown'}`,
-    );
+    if (user) return Promise.resolve(`u:${user.id}`);
+    const ip = forwardedClientIp(req) ?? (req as AuthedRequest).ip ?? 'unknown';
+    return Promise.resolve(`ip:${ip}`);
   }
 }

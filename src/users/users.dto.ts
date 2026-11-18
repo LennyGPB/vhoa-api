@@ -13,6 +13,8 @@ import {
   MinLength,
 } from 'class-validator';
 
+import { AVATAR_EFFECTS } from '../common/mappers';
+
 import { USERNAME_RE } from '../auth/auth.dto';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -84,6 +86,13 @@ export class PushTokenDto {
 
   @IsIn(['ios', 'android'])
   platform!: 'ios' | 'android';
+}
+
+export class AvatarEffectDto {
+  /** null = aucun effet. */
+  @IsOptional()
+  @IsIn([...AVATAR_EFFECTS])
+  effect!: string | null;
 }
 
 export class DeleteAccountDto {

@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 
 import { clampLimit, decodeCursor, encodeCursor, Page } from '../common/cursor';
-import { publicUrl, toAuthor } from '../common/mappers';
+import { AUTHOR_SELECT, publicUrl, toAuthor } from '../common/mappers';
 import { env } from '../config/env';
 import { NotificationType } from '../generated/prisma/enums';
 import { JobsService } from '../jobs/jobs.service';
@@ -359,7 +359,7 @@ export class NotificationsService implements OnModuleInit {
       actorIds.length
         ? this.prisma.user.findMany({
             where: { id: { in: actorIds } },
-            select: { id: true, username: true, avatarKey: true },
+            select: AUTHOR_SELECT,
           })
         : Promise.resolve(
             [] as { id: string; username: string; avatarKey: string | null }[],

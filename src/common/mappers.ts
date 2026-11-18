@@ -28,16 +28,54 @@ export const categoryFromLabel = (label: string): Category | undefined =>
 export const publicUrl = (key: string | null | undefined) =>
   key ? `${env().R2_PUBLIC_BASE_URL}/${key}` : '';
 
+/** Effets Premium autour de la photo de profil (voir le site : components/AvatarEffect). */
+export const AVATAR_EFFECTS = [
+  'liquid',
+  'wave',
+  'aura',
+  'orbit',
+  'sparkle',
+  'echo',
+  'bubbles',
+  'comet',
+  'tide',
+  'neon',
+] as const;
+
+/** Champs d'un auteur à sélectionner partout où sa photo est affichée. */
+export const AUTHOR_SELECT = {
+  id: true,
+  username: true,
+  avatarKey: true,
+  avatarEffect: true,
+  role: true,
+  premiumUntil: true,
+} as const;
+
 export interface AuthorRow {
   id: string;
   username: string;
   avatarKey: string | null;
+  avatarEffect?: string | null;
+  role?: string;
+  premiumUntil?: Date | null;
 }
+
+/**
+ * L'effet ne s'affiche que si le compte y a droit au moment de la lecture (admin, ou Premium
+ * encore valide) : un abonnement expiré fait disparaître l'effet sans autre traitement.
+ */
+export const effectOf = (u: AuthorRow) =>
+  u.avatarEffect &&
+  (u.role === 'ADMIN' || (!!u.premiumUntil && u.premiumUntil > new Date()))
+    ? u.avatarEffect
+    : null;
 
 export const toAuthor = (u: AuthorRow) => ({
   id: u.id,
   username: u.username,
   avatarUrl: publicUrl(u.avatarKey),
+  avatarEffect: effectOf(u),
 });
 
 export interface PostRow {
@@ -91,7 +129,7 @@ export const POST_SELECT = {
   transcript: true,
   publishedAt: true,
   createdAt: true,
-  author: { select: { id: true, username: true, avatarKey: true } },
+  author: { select: AUTHOR_SELECT },
   theme: {
     select: {
       id: true,

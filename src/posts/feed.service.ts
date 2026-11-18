@@ -4,6 +4,7 @@ import { CoachService } from '../coach/coach.service';
 import { AuthUser } from '../common/auth.decorators';
 import { clampLimit, decodeCursor, encodeCursor } from '../common/cursor';
 import {
+  AUTHOR_SELECT,
   CATEGORY_VALUES,
   POST_CARD_SELECT,
   POST_SELECT,
@@ -242,9 +243,7 @@ export class FeedService {
         orderBy: [{ followersCount: 'desc' }, { createdAt: 'desc' }],
         take: 16,
         select: {
-          id: true,
-          username: true,
-          avatarKey: true,
+          ...AUTHOR_SELECT,
           followersCount: true,
         },
       }),

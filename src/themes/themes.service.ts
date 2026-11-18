@@ -247,6 +247,30 @@ export class ThemesService {
     };
   }
 
+  /** Défis terminés (semaine et mois), du plus récent au plus ancien, avec leur podium. */
+  async recent(limitRaw?: number) {
+    const take = Math.min(Math.max(limitRaw ?? 8, 1), 20);
+    const themes = await this.prisma.theme.findMany({
+      where: { status: 'CLOSED' },
+      orderBy: { endsAt: 'desc' },
+      take,
+      include: {
+        winners: {
+          orderBy: { rank: 'asc' },
+          include: { post: { select: POST_CARD_SELECT } },
+        },
+      },
+    });
+    return themes.map((theme) => ({
+      theme: toTheme(theme),
+      winners: theme.winners.map((w) => ({
+        rank: w.rank,
+        votes: w.votes,
+        post: toPost(w.post as PostRow),
+      })),
+    }));
+  }
+
   /* ---------- Admin ---------- */
 
   list(status?: string) {

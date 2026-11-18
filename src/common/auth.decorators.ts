@@ -11,6 +11,12 @@ export const IS_PUBLIC = 'isPublic';
 /** Route accessible sans être connecté. Toutes les autres demandent un jeton valide. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 
+/**
+ * Lecteur sans compte (site web) sur les routes publiques : identifiant neutre qui ne
+ * correspond à aucun utilisateur. Les calculs restent valables : rien de masqué, rien d'aimé.
+ */
+export const ANONYMOUS_VIEWER = '00000000-0000-0000-0000-000000000000';
+
 export const ROLES = 'roles';
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES, roles);
 

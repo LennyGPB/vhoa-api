@@ -31,6 +31,21 @@ export interface Env {
   MEDIA_CONCURRENCY: number;
   /** Origines web autorisées (version web de l'app). Vide = aucune. */
   CORS_ORIGINS: string[];
+  /**
+   * Clé partagée avec le serveur du site web (vhoa-web), qui appelle l'API pour ses visiteurs.
+   * Avec elle, l'API accepte l'IP réelle du visiteur transmise par le site (limitation de débit).
+   * Vide = fonction désactivée.
+   */
+  BFF_SECRET: string;
+
+  /** Clé secrète Stripe (abonnement Premium vendu sur le site). Vide = vente désactivée. */
+  STRIPE_SECRET_KEY: string;
+  /** Secret de signature du webhook Stripe (whsec_…). */
+  STRIPE_WEBHOOK_SECRET: string;
+  /** Configuration du portail client Stripe propre à VHOA (bpc_…). Vide = portail désactivé. */
+  STRIPE_PORTAL_CONFIG: string;
+  /** Adresse publique du site (retours de paiement). */
+  WEB_URL: string;
 }
 
 const list = (v: string | undefined) =>
@@ -74,7 +89,19 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     EXPO_ACCESS_TOKEN: source.EXPO_ACCESS_TOKEN?.trim() ?? '',
     MEDIA_CONCURRENCY: Math.max(1, Number(source.MEDIA_CONCURRENCY ?? 1)),
     CORS_ORIGINS: list(source.CORS_ORIGINS),
+    BFF_SECRET: source.BFF_SECRET?.trim() ?? '',
+    STRIPE_SECRET_KEY: source.STRIPE_SECRET_KEY?.trim() ?? '',
+    STRIPE_WEBHOOK_SECRET: source.STRIPE_WEBHOOK_SECRET?.trim() ?? '',
+    STRIPE_PORTAL_CONFIG: source.STRIPE_PORTAL_CONFIG?.trim() ?? '',
+    WEB_URL: (source.WEB_URL?.trim() || 'http://localhost:3003').replace(
+      /\/+$/,
+      '',
+    ),
   };
+
+  if (env.BFF_SECRET && env.BFF_SECRET.length < 32) {
+    errors.push('BFF_SECRET doit faire au moins 32 caractères');
+  }
 
   if (nodeEnv === 'production') {
     if (
@@ -85,6 +112,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
         'REVENUECAT_WEBHOOK_AUTH (24 caractères min.) est obligatoire en production',
       );
     }
+    if (env.STRIPE_SECRET_KEY && !env.STRIPE_WEBHOOK_SECRET)
+      errors.push(
+        'STRIPE_WEBHOOK_SECRET est obligatoire avec STRIPE_SECRET_KEY',
+      );
+    if (env.STRIPE_SECRET_KEY && !env.WEB_URL.startsWith('https://'))
+      errors.push('WEB_URL doit être en https');
     if (!env.R2_PUBLIC_BASE_URL.startsWith('https://'))
       errors.push('R2_PUBLIC_BASE_URL doit être en https');
   }
