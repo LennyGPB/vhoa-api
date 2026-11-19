@@ -23,6 +23,7 @@ import { env } from './config/env';
 import { JobsModule } from './jobs/jobs.service';
 import { StorageService } from './media/storage.service';
 import { NotificationsService } from './notifications/notifications.service';
+import { WebPushService } from './notifications/web-push.service';
 import { FeedService } from './posts/feed.service';
 import { MediaProcessor } from './posts/media.processor';
 import { PostLifecycleService } from './posts/post-lifecycle.service';
@@ -91,6 +92,7 @@ class HealthController {
     OpenAiService,
     StorageService,
     NotificationsService,
+    WebPushService,
     ProgressService,
     CoachService,
     SocialService,

@@ -91,6 +91,8 @@ model User {
   reports        Report[]
   appeals        Appeal[]
   analyses       Analysis[]
+  aiUsage        AiUsage[]
+  webPush        WebPushSubscription[]
   notifications  Notification[]    @relation("recipient")
   pushTokens     PushToken[]
   badges         UserBadge[]
@@ -117,6 +119,21 @@ model RefreshToken {
   @@index([userId])
   @@index([familyId])
   @@index([expiresAt])
+}
+
+/// Abonnement aux notifications d'un navigateur (Web Push, site vhoa.fr). Un par navigateur.
+model WebPushSubscription {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @db.Uuid
+  /// Adresse fournie par le service push du navigateur (Google, Mozilla, Apple…).
+  endpoint  String   @unique @db.VarChar(1000)
+  p256dh    String   @db.VarChar(200)
+  auth      String   @db.VarChar(100)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model PushToken {
@@ -444,6 +461,19 @@ enum AnalysisStatus {
   PENDING
   DONE
   FAILED
+}
+
+/// Analyses du coach consommées par mois : décompte du quota, indépendant des analyses elles-mêmes
+/// (supprimer une prise et son analyse ne rend pas le crédit). Rendu seulement si l'analyse échoue.
+model AiUsage {
+  userId String @db.Uuid
+  /// YYYY-MM
+  month  String @db.VarChar(7)
+  count  Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, month])
 }
 
 model Analysis {

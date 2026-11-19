@@ -21,6 +21,7 @@ import {
   Public,
 } from '../common/auth.decorators';
 import { NotificationsService } from '../notifications/notifications.service';
+import { WebPushService } from '../notifications/web-push.service';
 import {
   AvatarEffectDto,
   AppealDto,
@@ -30,6 +31,8 @@ import {
   PushTokenDto,
   SettingsDto,
   UpdateMeDto,
+  WebPushDto,
+  WebPushRemoveDto,
 } from './users.dto';
 import { UsersService } from './users.service';
 
@@ -42,6 +45,7 @@ export class UsersController {
   constructor(
     private readonly users: UsersService,
     private readonly notifications: NotificationsService,
+    private readonly webPush: WebPushService,
   ) {}
 
   /* ---------- Mon compte ---------- */
@@ -100,6 +104,31 @@ export class UsersController {
   @Get('me/blocked')
   blocked(@CurrentUser() user: AuthUser) {
     return this.users.blockedList(user.id);
+  }
+
+  /* ---------- Notifications du site (Web Push) ---------- */
+
+  /** Clé publique VAPID (null si les notifications du site ne sont pas configurées). */
+  @Public()
+  @Get('push/web-key')
+  webPushKey() {
+    return { publicKey: this.webPush.publicKey };
+  }
+
+  @Post('me/web-push')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 20, ttl: HOUR } })
+  webPushSubscribe(@CurrentUser() user: AuthUser, @Body() dto: WebPushDto) {
+    return this.webPush.subscribe(user.id, dto);
+  }
+
+  @Delete('me/web-push')
+  @Throttle({ default: { limit: 20, ttl: HOUR } })
+  webPushUnsubscribe(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: WebPushRemoveDto,
+  ) {
+    return this.webPush.unsubscribe(user.id, dto.endpoint);
   }
 
   @Post('me/push-tokens')

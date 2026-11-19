@@ -88,6 +88,40 @@ export class PushTokenDto {
   platform!: 'ios' | 'android';
 }
 
+/**
+ * Services push officiels des navigateurs. Le serveur envoie des requêtes à l'adresse fournie :
+ * on refuse toute autre destination (sinon on pourrait lui faire appeler n'importe quelle URL).
+ */
+const PUSH_ENDPOINT =
+  /^https:\/\/(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9-]+\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)\/[A-Za-z0-9_\-/:.%~=+?&]+$/;
+const B64URL = /^[A-Za-z0-9_-]+=*$/;
+
+/** Abonnement Web Push d'un navigateur (PushSubscription.toJSON()). */
+export class WebPushDto {
+  @IsString()
+  @MaxLength(1000)
+  @Matches(PUSH_ENDPOINT, { message: 'Service de notifications non reconnu' })
+  endpoint!: string;
+
+  @IsString()
+  @MinLength(40)
+  @MaxLength(200)
+  @Matches(B64URL)
+  p256dh!: string;
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(100)
+  @Matches(B64URL)
+  auth!: string;
+}
+
+export class WebPushRemoveDto {
+  @IsString()
+  @MaxLength(1000)
+  endpoint!: string;
+}
+
 export class AvatarEffectDto {
   /** null = aucun effet. */
   @IsOptional()

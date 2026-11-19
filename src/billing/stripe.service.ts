@@ -262,8 +262,6 @@ export class StripeBillingService {
           app: 'vhoa',
           userId: user.id,
           plan,
-          // L'abonné a demandé l'accès immédiat et renoncé à son droit de rétractation.
-          waiverAt: new Date().toISOString(),
         },
         subscription_data: { metadata: { app: 'vhoa', userId: user.id, plan } },
         success_url: `${web}/premium/merci?session_id={CHECKOUT_SESSION_ID}`,

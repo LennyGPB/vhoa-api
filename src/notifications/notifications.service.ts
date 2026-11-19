@@ -6,6 +6,7 @@ import { env } from '../config/env';
 import { NotificationType } from '../generated/prisma/enums';
 import { JobsService } from '../jobs/jobs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { WebPushService } from './web-push.service';
 
 type Group = 'interactions' | 'themes' | 'progress' | 'system';
 
@@ -70,6 +71,7 @@ export class NotificationsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jobs: JobsService,
+    private readonly webPush: WebPushService,
   ) {}
 
   onModuleInit() {
@@ -250,7 +252,10 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
-  /** Envoi via l'API Expo Push, en respectant les préférences de chaque utilisateur. */
+  /**
+   * Envoi aux navigateurs (Web Push) puis à l'app mobile (Expo Push), en respectant les
+   * préférences de chaque utilisateur.
+   */
   private async sendPush(
     userIds: string[],
     type: NotificationType,
@@ -266,11 +271,18 @@ export class NotificationsService implements OnModuleInit {
           : group === 'progress'
             ? { notifyProgress: true }
             : {};
+    const userWhere = { status: 'ACTIVE' as const, ...prefFilter };
+
+    // Navigateurs d'abord : cet envoi ne lève jamais d'erreur, il n'est donc pas rejoué
+    // si l'envoi Expo échoue ensuite.
+    await this.webPush.send(userIds, userWhere, {
+      title: 'VHOA',
+      body,
+      url: data?.postId ? `/p/${data.postId}` : '/alertes',
+    });
+
     const tokens = await this.prisma.pushToken.findMany({
-      where: {
-        userId: { in: userIds },
-        user: { status: 'ACTIVE', ...prefFilter },
-      },
+      where: { userId: { in: userIds }, user: userWhere },
       select: { token: true },
     });
     if (!tokens.length) return;

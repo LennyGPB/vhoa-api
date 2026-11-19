@@ -331,7 +331,12 @@ export class UsersService {
       return { items: [], nextCursor: null };
     }
     return this.postPage(
-      { authorId: userId, status: 'PUBLISHED' },
+      {
+        authorId: userId,
+        status: 'PUBLISHED',
+        // Compte banni : ses prises ne sont plus visibles (sauf pour lui-même).
+        ...(viewerId === userId ? {} : { author: { status: 'ACTIVE' } }),
+      },
       cursor,
       limit,
     );
@@ -360,6 +365,7 @@ export class UsersService {
         userId,
         post: {
           status: 'PUBLISHED',
+          author: { status: 'ACTIVE' },
           ...(hidden.length ? { authorId: { notIn: hidden } } : {}),
         },
         ...(cursor

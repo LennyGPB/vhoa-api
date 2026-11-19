@@ -33,6 +33,8 @@ export class StorageService {
       // R2 ne gère pas les sommes de contrôle CRC ajoutées par défaut aux URLs signées.
       requestChecksumCalculation: 'WHEN_REQUIRED',
       responseChecksumValidation: 'WHEN_REQUIRED',
+      // Délais maximum : une connexion R2 bloquée ne doit pas occuper une place de traitement à vie.
+      requestHandler: { connectionTimeout: 5_000, requestTimeout: 120_000 },
     });
   }
 

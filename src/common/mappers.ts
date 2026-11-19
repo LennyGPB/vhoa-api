@@ -50,10 +50,13 @@ export const AUTHOR_SELECT = {
   avatarEffect: true,
   role: true,
   premiumUntil: true,
+  status: true,
 } as const;
 
 export interface AuthorRow {
   id: string;
+  /** ACTIVE ou BANNED : les contenus d'un compte banni ne sont plus montrés. */
+  status?: string;
   username: string;
   avatarKey: string | null;
   avatarEffect?: string | null;
@@ -87,6 +90,8 @@ export interface PostRow {
   hashtags: string[];
   thumbnailKey: string | null;
   mediaKey: string | null;
+  /** Renseigné quand la modération a signalé la prise : ses fichiers ne sont alors jamais exposés. */
+  moderationReason?: string | null;
   duration: number;
   likesCount: number;
   commentsCount: number;
@@ -120,6 +125,7 @@ export const POST_SELECT = {
   hashtags: true,
   thumbnailKey: true,
   mediaKey: true,
+  moderationReason: true,
   duration: true,
   likesCount: true,
   commentsCount: true,
@@ -177,8 +183,12 @@ const STATUS: Record<string, string> = {
 };
 
 /** Vignette d'un post : image extraite de la vidéo, ou avatar de l'auteur pour l'audio. */
+/** Prise signalée par la modération : ni sa vidéo ni ses images ne sortent (même pour son auteur). */
+const flagged = (p: PostRow) => Boolean(p.moderationReason);
+
 const thumbnailOf = (p: PostRow) =>
-  publicUrl(p.thumbnailKey) || publicUrl(p.author.avatarKey);
+  (flagged(p) ? '' : publicUrl(p.thumbnailKey)) ||
+  publicUrl(p.author.avatarKey);
 
 export const toPost = (p: PostRow) => ({
   id: p.id,
@@ -202,7 +212,7 @@ export interface ViewerState {
 
 export const toFeedPost = (p: PostRow, viewer: ViewerState) => ({
   ...toPost(p),
-  mediaUrl: publicUrl(p.mediaKey),
+  mediaUrl: flagged(p) ? '' : publicUrl(p.mediaKey),
   transcript:
     p.type === 'AUDIO'
       ? ((p.transcript as unknown[] | null) ?? undefined)

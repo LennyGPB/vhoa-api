@@ -25,7 +25,10 @@ const HEAVY = new Set(['media.process']);
 const LIGHT_CONCURRENCY = 4;
 const MAX_ATTEMPTS = 3;
 const POLL_MS = 15_000;
+/** Tâche considérée bloquée (instance arrêtée en plein travail) après ce délai. */
 const STALE_MS = 10 * 60_000;
+/** Les tâches lourdes peuvent légitimement durer plus de 10 min (conversion + transcription). */
+const STALE_HEAVY_MS = 30 * 60_000;
 
 /**
  * File de tâches stockée dans Postgres (FOR UPDATE SKIP LOCKED) :
@@ -78,10 +81,20 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
   /** Remet en file les tâches bloquées (instance redémarrée en plein travail). */
   private async tick() {
     try {
+      const now = Date.now();
       await this.prisma.job.updateMany({
         where: {
           status: 'RUNNING',
-          lockedAt: { lt: new Date(Date.now() - STALE_MS) },
+          OR: [
+            {
+              type: { notIn: [...HEAVY] },
+              lockedAt: { lt: new Date(now - STALE_MS) },
+            },
+            {
+              type: { in: [...HEAVY] },
+              lockedAt: { lt: new Date(now - STALE_HEAVY_MS) },
+            },
+          ],
         },
         data: { status: 'QUEUED', lockedAt: null },
       });

@@ -157,6 +157,7 @@ export class ThemesService {
         where: {
           themeId: theme.id,
           status: 'PUBLISHED',
+          author: { status: 'ACTIVE' },
           convincedCount: { gt: 0 },
         },
         orderBy: [{ convincedCount: 'desc' }, { publishedAt: 'asc' }],

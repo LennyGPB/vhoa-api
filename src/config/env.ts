@@ -28,6 +28,11 @@ export interface Env {
   REVENUECAT_ENTITLEMENT: string;
 
   EXPO_ACCESS_TOKEN: string;
+  /** Notifications du site (Web Push). Vides = désactivées. Clés générées par `npm run vapid`. */
+  VAPID_PUBLIC_KEY: string;
+  VAPID_PRIVATE_KEY: string;
+  /** Contact transmis aux services push (mailto: ou https:). */
+  VAPID_SUBJECT: string;
   MEDIA_CONCURRENCY: number;
   /** Origines web autorisées (version web de l'app). Vide = aucune. */
   CORS_ORIGINS: string[];
@@ -87,6 +92,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     REVENUECAT_SECRET_KEY: source.REVENUECAT_SECRET_KEY?.trim() ?? '',
     REVENUECAT_ENTITLEMENT: source.REVENUECAT_ENTITLEMENT?.trim() || 'premium',
     EXPO_ACCESS_TOKEN: source.EXPO_ACCESS_TOKEN?.trim() ?? '',
+    VAPID_PUBLIC_KEY: source.VAPID_PUBLIC_KEY?.trim() ?? '',
+    VAPID_PRIVATE_KEY: source.VAPID_PRIVATE_KEY?.trim() ?? '',
+    VAPID_SUBJECT: source.VAPID_SUBJECT?.trim() || 'https://vhoa.fr',
     MEDIA_CONCURRENCY: Math.max(1, Number(source.MEDIA_CONCURRENCY ?? 1)),
     CORS_ORIGINS: list(source.CORS_ORIGINS),
     BFF_SECRET: source.BFF_SECRET?.trim() ?? '',
@@ -118,6 +126,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       );
     if (env.STRIPE_SECRET_KEY && !env.WEB_URL.startsWith('https://'))
       errors.push('WEB_URL doit être en https');
+    if (Boolean(env.VAPID_PUBLIC_KEY) !== Boolean(env.VAPID_PRIVATE_KEY))
+      errors.push('VAPID_PUBLIC_KEY et VAPID_PRIVATE_KEY vont ensemble');
     if (!env.R2_PUBLIC_BASE_URL.startsWith('https://'))
       errors.push('R2_PUBLIC_BASE_URL doit être en https');
   }

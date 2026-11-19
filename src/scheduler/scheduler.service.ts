@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProgressService } from '../progress/progress.service';
 import { ThemesService } from '../themes/themes.service';
 import { MediaCleanup } from './media-cleanup';
+import { StorageService } from '../media/storage.service';
 
 const TZ = 'Europe/Paris';
 
@@ -26,6 +27,7 @@ export class SchedulerService implements OnApplicationBootstrap {
     private readonly progress: ProgressService,
     private readonly cleanup: MediaCleanup,
     private readonly stripe: StripeBillingService,
+    private readonly storage: StorageService,
   ) {}
 
   onApplicationBootstrap() {
@@ -123,7 +125,53 @@ export class SchedulerService implements OnApplicationBootstrap {
       await this.prisma.billingEvent.deleteMany({
         where: { createdAt: { lt: addDays(now, -90) } },
       });
+      await this.purgeModeratedMedia(now);
     });
+  }
+
+  /**
+   * Fichiers des prises refusées, retirées ou signalées par la modération : gardés 30 jours
+   * (le temps d'une contestation, examinée par un admin), puis supprimés du stockage.
+   * Une contestation encore ouverte les conserve.
+   */
+  private async purgeModeratedMedia(now: Date) {
+    const posts = await this.prisma.post.findMany({
+      where: {
+        updatedAt: { lt: addDays(now, -30) },
+        OR: [{ mediaKey: { not: null } }, { thumbnailKey: { not: null } }],
+        AND: [
+          {
+            OR: [
+              { status: { in: ['REJECTED', 'REMOVED'] } },
+              { moderationReason: { not: null } },
+            ],
+          },
+        ],
+      },
+      select: { id: true, mediaPrefix: true },
+      take: 200,
+    });
+    if (!posts.length) return;
+    const appealed = new Set(
+      (
+        await this.prisma.appeal.findMany({
+          where: { status: 'OPEN', postId: { in: posts.map((p) => p.id) } },
+          select: { postId: true },
+        })
+      ).map((a) => a.postId),
+    );
+    for (const post of posts) {
+      if (appealed.has(post.id)) continue;
+      try {
+        await this.storage.deletePrefix(`${post.mediaPrefix}/`);
+        await this.prisma.post.update({
+          where: { id: post.id },
+          data: { mediaKey: null, thumbnailKey: null },
+        });
+      } catch (e) {
+        this.logger.warn(`Purge média ${post.id} : ${(e as Error).message}`);
+      }
+    }
   }
 
   @Cron(CronExpression.EVERY_30_MINUTES)

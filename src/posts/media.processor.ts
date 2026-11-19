@@ -15,6 +15,7 @@ import {
   transcodeAudio,
   transcodeVideo,
 } from '../media/ffmpeg';
+import { refundAnalysis } from '../coach/coach.service';
 import { StorageService } from '../media/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -122,8 +123,9 @@ export class MediaProcessor implements OnModuleInit {
       const mediaKey = `${post.mediaPrefix}/${isVideo ? 'media.mp4' : 'media.m4a'}`;
       const thumbnailKey = thumbPath ? `${post.mediaPrefix}/thumb.jpg` : null;
 
-      const [transcription] = await Promise.all([
-        this.openai.transcribe(speech),
+      // Envoi d'abord, transcription ensuite : si l'envoi échoue, la nouvelle tentative
+      // ne repaie pas Whisper (seul l'envoi, gratuit, est refait).
+      await Promise.all([
         this.storage.upload(
           mediaKey,
           output,
@@ -133,6 +135,7 @@ export class MediaProcessor implements OnModuleInit {
           ? this.storage.upload(thumbnailKey!, thumbPath, 'image/jpeg')
           : Promise.resolve(),
       ]);
+      const transcription = await this.openai.transcribe(speech);
 
       const verdict = await this.openai.moderate({
         text: [post.title, post.hashtags.join(' '), transcription.text]
@@ -216,10 +219,17 @@ export class MediaProcessor implements OnModuleInit {
         rawKey: null,
       },
     });
-    await this.prisma.analysis.updateMany({
+    // Analyses en attente : échouées, et leur crédit est rendu.
+    const pending = await this.prisma.analysis.findMany({
       where: { postId, status: 'PENDING' },
+      select: { id: true, userId: true, month: true },
+    });
+    await this.prisma.analysis.updateMany({
+      where: { id: { in: pending.map((a) => a.id) } },
       data: { status: 'FAILED', error: 'Le fichier n’a pas pu être traité' },
     });
+    for (const a of pending)
+      await refundAnalysis(this.prisma, a.userId, a.month);
     if (post.rawKey)
       await this.storage.deleteKeys([post.rawKey]).catch(() => undefined);
   }

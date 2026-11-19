@@ -4,6 +4,7 @@ import { createReadStream } from 'node:fs';
 import OpenAI from 'openai';
 
 import { env } from '../config/env';
+import { PermanentJobError } from '../jobs/jobs.service';
 
 export interface TimedWord {
   w: string;
@@ -34,7 +35,8 @@ export class OpenAiService {
   private readonly client = new OpenAI({
     apiKey: env().OPENAI_API_KEY,
     timeout: 60_000,
-    maxRetries: 2,
+    // Une seule relance réseau : la file de tâches réessaie déjà (sinon jusqu'à 9 appels payés).
+    maxRetries: 1,
   });
 
   /** Identifiant anonyme transmis à OpenAI pour la détection d'abus (jamais l'id brut). */
@@ -153,15 +155,17 @@ export class OpenAiService {
         },
       },
     });
+    // Réponse tronquée ou JSON invalide : réessayer donnerait le même résultat (et serait refacturé).
     if (res.status === 'incomplete') {
       this.logger.warn(
         `Réponse incomplète (${res.incomplete_details?.reason ?? '?'})`,
       );
+      throw new PermanentJobError('Réponse IA incomplète');
     }
     try {
       return JSON.parse(res.output_text) as T;
     } catch {
-      throw new Error('Réponse IA illisible');
+      throw new PermanentJobError('Réponse IA illisible');
     }
   }
 }

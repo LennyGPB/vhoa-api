@@ -9,7 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { Equals, IsIn, IsOptional, IsString, Matches } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 import type { Request } from 'express';
 
 import { type AuthUser, CurrentUser, Public } from '../common/auth.decorators';
@@ -18,12 +18,6 @@ import { type Plan, StripeBillingService } from './stripe.service';
 export class CheckoutDto {
   @IsIn(['monthly', 'yearly'])
   plan!: Plan;
-
-  /** Demande d'accès immédiat et renonciation au droit de rétractation (obligatoire). */
-  @Equals(true, {
-    message: 'Confirme l’accès immédiat pour continuer',
-  })
-  acceptWaiver!: boolean;
 }
 
 export class ConfirmDto {

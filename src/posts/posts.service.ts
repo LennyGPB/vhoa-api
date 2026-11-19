@@ -266,6 +266,7 @@ export class PostsService {
     if (post.author.id === viewerId) return post;
     if (
       post.status !== 'PUBLISHED' ||
+      post.author.status === 'BANNED' ||
       (await this.social.isHidden(viewerId, post.author.id))
     ) {
       throw new NotFoundException('Post introuvable');
@@ -277,7 +278,11 @@ export class PostsService {
     const post = await this.loadPost(postId);
     if (!post) throw new NotFoundException('Post introuvable');
     const isOwner = post.author.id === viewerId;
-    if (!isOwner && (await this.social.isHidden(viewerId, post.author.id)))
+    if (
+      !isOwner &&
+      (post.author.status === 'BANNED' ||
+        (await this.social.isHidden(viewerId, post.author.id)))
+    )
       throw new NotFoundException('Post introuvable');
     if (!isOwner && post.status !== 'PUBLISHED') {
       // L'app affiche un état « indisponible » plutôt qu'une erreur.
@@ -579,6 +584,8 @@ export class PostsService {
     const rows = await this.prisma.comment.findMany({
       where: {
         postId,
+        // Commentaires des comptes bannis masqués.
+        author: { status: 'ACTIVE' },
         ...(hidden.length ? { authorId: { notIn: hidden } } : {}),
         ...(cursor
           ? {

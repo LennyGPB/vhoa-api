@@ -64,6 +64,7 @@ export class FeedService {
 
     const base: Prisma.PostWhereInput = {
       status: 'PUBLISHED',
+      author: { status: 'ACTIVE' },
       authorId: { notIn: [viewerId, ...hidden] },
       notInterested: { none: { userId: viewerId } },
     };
@@ -126,7 +127,10 @@ export class FeedService {
     const rows = (await this.prisma.post.findMany({
       where: {
         status: 'PUBLISHED',
-        author: { followers: { some: { followerId: viewerId } } },
+        author: {
+          status: 'ACTIVE',
+          followers: { some: { followerId: viewerId } },
+        },
         ...(cursor
           ? {
               OR: [
@@ -165,6 +169,7 @@ export class FeedService {
       where: {
         themeId,
         status: 'PUBLISHED',
+        author: { status: 'ACTIVE' },
         ...(hidden.length ? { authorId: { notIn: hidden } } : {}),
         ...(cursor
           ? {
@@ -212,6 +217,7 @@ export class FeedService {
       this.prisma.post.findMany({
         where: {
           status: 'PUBLISHED',
+          author: { status: 'ACTIVE' },
           publishedAt: { gte: addDays(new Date(), -14) },
         },
         orderBy: [{ hotScore: 'desc' }, { id: 'desc' }],
@@ -219,7 +225,7 @@ export class FeedService {
         select: POST_CARD_SELECT,
       }),
       this.prisma.post.findMany({
-        where: { status: 'PUBLISHED' },
+        where: { status: 'PUBLISHED', author: { status: 'ACTIVE' } },
         orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
         take: 60,
         select: POST_CARD_SELECT,
