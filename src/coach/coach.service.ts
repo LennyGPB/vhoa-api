@@ -28,6 +28,10 @@ export const FREE_MONTHLY_ANALYSES = 1;
 /** Analyses incluses chaque mois dans Premium (limite d'usage des CGV). */
 export const PREMIUM_MONTHLY_ANALYSES = 60;
 
+/** Coach au niveau Premium : abonnés, et admins (offert, sans abonnement). */
+export const coachPremium = (user: AuthUser) =>
+  user.isPremium || user.role === 'ADMIN';
+
 /**
  * Rend un crédit d'analyse (analyse échouée). Le décompte du quota est dans AiUsage :
  * supprimer une prise, et donc son analyse, ne rend jamais le crédit.
@@ -135,7 +139,7 @@ export class CoachService implements OnModuleInit {
   }
 
   async quota(user: AuthUser) {
-    const total = user.isPremium
+    const total = coachPremium(user)
       ? PREMIUM_MONTHLY_ANALYSES
       : FREE_MONTHLY_ANALYSES;
     const usage = await this.prisma.aiUsage.findUnique({
@@ -147,7 +151,7 @@ export class CoachService implements OnModuleInit {
       used,
       total,
       remaining: Math.max(0, total - used),
-      isPremium: user.isPremium,
+      isPremium: coachPremium(user),
     };
   }
 
@@ -171,7 +175,7 @@ export class CoachService implements OnModuleInit {
         select: { count: true },
       });
       const used = usage?.count ?? 0;
-      if (user.isPremium && used >= PREMIUM_MONTHLY_ANALYSES) {
+      if (coachPremium(user) && used >= PREMIUM_MONTHLY_ANALYSES) {
         throw new HttpException(
           {
             code: 'AI_QUOTA_EXCEEDED',
@@ -180,7 +184,7 @@ export class CoachService implements OnModuleInit {
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
-      if (!user.isPremium && used >= FREE_MONTHLY_ANALYSES) {
+      if (!coachPremium(user) && used >= FREE_MONTHLY_ANALYSES) {
         throw new HttpException(
           {
             code: 'AI_QUOTA_EXCEEDED',
@@ -195,7 +199,7 @@ export class CoachService implements OnModuleInit {
           userId: user.id,
           postId,
           month,
-          detailed: user.isPremium,
+          detailed: coachPremium(user),
         },
         select: { id: true },
       });
@@ -454,7 +458,7 @@ export class CoachService implements OnModuleInit {
 
   /** Historique des analyses (Premium). */
   async history(user: AuthUser, cursorStr?: string, limitRaw?: number) {
-    if (!user.isPremium)
+    if (!coachPremium(user))
       throw new ForbiddenException({
         code: 'PREMIUM_REQUIRED',
         message: 'L’historique est réservé à Premium',
@@ -492,7 +496,7 @@ export class CoachService implements OnModuleInit {
 
   /** Statistiques et courbe de progression (Premium). */
   async stats(user: AuthUser) {
-    if (!user.isPremium)
+    if (!coachPremium(user))
       throw new ForbiddenException({
         code: 'PREMIUM_REQUIRED',
         message: 'Les statistiques sont réservées à Premium',

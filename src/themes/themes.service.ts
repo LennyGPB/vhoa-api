@@ -64,10 +64,8 @@ export class ThemesService {
       const current = this.range(period, now);
       const next = this.range(period, current.end);
       for (const r of [current, next]) {
-        const exists = await this.prisma.theme.count({
-          where: { period, startsAt: r.start },
-        });
-        if (exists) continue;
+        // Une période déjà couverte (même par un défi qui dure plusieurs semaines) est laissée telle quelle.
+        if (await this.covered(period, r)) continue;
         // Défi de la semaine : d'abord la file d'attente de l'admin, sinon GPT.
         const queued = period === 'WEEKLY' ? await this.popQueue() : null;
         const subject = queued ?? (await this.generateSubject(period));
@@ -337,6 +335,14 @@ export class ThemesService {
     return this.queueList();
   }
 
+  /** Vrai si un défi de cette période chevauche l'intervalle (défis d'une durée personnalisée). */
+  private async covered(period: ThemePeriod, r: { start: Date; end: Date }) {
+    const n = await this.prisma.theme.count({
+      where: { period, startsAt: { lt: r.end }, endsAt: { gt: r.start } },
+    });
+    return n > 0;
+  }
+
   /** Retire et renvoie le sujet en tête de file (null si la file est vide). */
   private async popQueue(): Promise<string | null> {
     return this.prisma.$transaction(async (tx) => {
@@ -356,8 +362,14 @@ export class ThemesService {
    */
   async applyQueue(now = new Date()) {
     const next = weekRange(weekRange(now).end);
-    const theme = await this.prisma.theme.findUnique({
-      where: { period_startsAt: { period: 'WEEKLY', startsAt: next.start } },
+    // Le défi qui couvre la semaine prochaine (il peut avoir commencé avant et durer plus longtemps).
+    const theme = await this.prisma.theme.findFirst({
+      where: {
+        period: 'WEEKLY',
+        startsAt: { lt: next.end },
+        endsAt: { gt: next.start },
+      },
+      orderBy: { startsAt: 'asc' },
       select: { id: true, status: true, aiGenerated: true },
     });
     if (theme && (theme.status !== 'SCHEDULED' || !theme.aiGenerated)) return;
