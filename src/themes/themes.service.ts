@@ -68,7 +68,9 @@ export class ThemesService {
           where: { period, startsAt: r.start },
         });
         if (exists) continue;
-        const subject = await this.generateSubject(period);
+        // Défi de la semaine : d'abord la file d'attente de l'admin, sinon GPT.
+        const queued = period === 'WEEKLY' ? await this.popQueue() : null;
+        const subject = queued ?? (await this.generateSubject(period));
         await this.prisma.theme
           .create({
             data: {
@@ -76,7 +78,7 @@ export class ThemesService {
               subject,
               startsAt: r.start,
               endsAt: r.end,
-              aiGenerated: true,
+              aiGenerated: !queued,
             },
           })
           .catch(() => undefined); // créé entre-temps par une autre instance
@@ -270,6 +272,115 @@ export class ThemesService {
         post: toPost(w.post as PostRow),
       })),
     }));
+  }
+
+  /* ---------- File d'attente des défis de la semaine (admin) ---------- */
+
+  queueList() {
+    return this.prisma.themeQueueItem.findMany({
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, subject: true, position: true, createdAt: true },
+    });
+  }
+
+  /** Ajoute un sujet en fin de file. */
+  async queueAdd(subject: string) {
+    const last = await this.prisma.themeQueueItem.findFirst({
+      orderBy: { position: 'desc' },
+      select: { position: true },
+    });
+    await this.prisma.themeQueueItem.create({
+      data: { subject, position: (last?.position ?? -1) + 1 },
+    });
+    await this.applyQueue();
+    return this.queueList();
+  }
+
+  async queueUpdate(id: string, subject: string) {
+    const { count } = await this.prisma.themeQueueItem.updateMany({
+      where: { id },
+      data: { subject },
+    });
+    if (!count) throw new NotFoundException('Sujet introuvable');
+    return this.queueList();
+  }
+
+  async queueRemove(id: string) {
+    await this.prisma.themeQueueItem.deleteMany({ where: { id } });
+    return this.queueList();
+  }
+
+  /** Nouvel ordre de la file (glisser-déposer) : tous les identifiants, du premier au dernier. */
+  async queueReorder(ids: string[]) {
+    const current = await this.prisma.themeQueueItem.findMany({
+      select: { id: true },
+    });
+    const known = new Set(current.map((i) => i.id));
+    if (
+      ids.length !== known.size ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !known.has(id))
+    ) {
+      throw new ConflictException(
+        'La file a changé entre-temps : recharge la page.',
+      );
+    }
+    await this.prisma.$transaction(
+      ids.map((id, position) =>
+        this.prisma.themeQueueItem.update({
+          where: { id },
+          data: { position },
+        }),
+      ),
+    );
+    await this.applyQueue();
+    return this.queueList();
+  }
+
+  /** Retire et renvoie le sujet en tête de file (null si la file est vide). */
+  private async popQueue(): Promise<string | null> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('theme-queue'))`;
+      const head = await tx.themeQueueItem.findFirst({
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+      });
+      if (!head) return null;
+      await tx.themeQueueItem.delete({ where: { id: head.id } });
+      return head.subject;
+    });
+  }
+
+  /**
+   * La semaine prochaine n'a encore qu'un sujet proposé par GPT (non relu) : la tête de file
+   * le remplace tout de suite. Un sujet choisi ou modifié par l'admin n'est jamais écrasé.
+   */
+  async applyQueue(now = new Date()) {
+    const next = weekRange(weekRange(now).end);
+    const theme = await this.prisma.theme.findUnique({
+      where: { period_startsAt: { period: 'WEEKLY', startsAt: next.start } },
+      select: { id: true, status: true, aiGenerated: true },
+    });
+    if (theme && (theme.status !== 'SCHEDULED' || !theme.aiGenerated)) return;
+    const subject = await this.popQueue();
+    if (!subject) return;
+    if (theme) {
+      await this.prisma.theme.update({
+        where: { id: theme.id },
+        data: { subject, aiGenerated: false },
+      });
+    } else {
+      await this.prisma.theme
+        .create({
+          data: {
+            period: 'WEEKLY',
+            subject,
+            startsAt: next.start,
+            endsAt: next.end,
+            aiGenerated: false,
+          },
+        })
+        .catch(() => undefined);
+    }
   }
 
   /* ---------- Admin ---------- */

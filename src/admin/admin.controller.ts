@@ -11,12 +11,16 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsDateString,
   IsIn,
+  IsUUID,
   IsOptional,
   IsString,
   MaxLength,
@@ -56,6 +60,13 @@ class ThemeDto {
   @MinLength(10)
   @MaxLength(140)
   subject!: string;
+}
+
+class QueueOrderDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsUUID('all', { each: true })
+  ids!: string[];
 }
 
 class SubjectDto {
@@ -514,6 +525,33 @@ export class AdminController {
   @Patch('themes/:id')
   updateTheme(@Param('id', uuid) id: string, @Body() dto: SubjectDto) {
     return this.themes.updateSubject(id, dto.subject);
+  }
+
+  /* File d'attente des défis de la semaine */
+
+  @Get('theme-queue')
+  themeQueue() {
+    return this.themes.queueList();
+  }
+
+  @Post('theme-queue')
+  addToQueue(@Body() dto: SubjectDto) {
+    return this.themes.queueAdd(dto.subject);
+  }
+
+  @Put('theme-queue/order')
+  reorderQueue(@Body() dto: QueueOrderDto) {
+    return this.themes.queueReorder(dto.ids);
+  }
+
+  @Patch('theme-queue/:id')
+  updateQueued(@Param('id', uuid) id: string, @Body() dto: SubjectDto) {
+    return this.themes.queueUpdate(id, dto.subject);
+  }
+
+  @Delete('theme-queue/:id')
+  removeQueued(@Param('id', uuid) id: string) {
+    return this.themes.queueRemove(id);
   }
 
   @Post('themes/:id/regenerate')

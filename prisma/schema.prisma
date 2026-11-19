@@ -424,6 +424,17 @@ enum ThemeStatus {
   CLOSED
 }
 
+/// File d'attente des défis de la semaine, dans l'ordre choisi par l'admin. Chaque nouvelle
+/// semaine prend le sujet en tête de file (sinon GPT en propose un).
+model ThemeQueueItem {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  subject   String   @db.VarChar(140)
+  position  Int
+  createdAt DateTime @default(now())
+
+  @@index([position])
+}
+
 model Theme {
   id                String      @id @default(uuid(7)) @db.Uuid
   period            ThemePeriod
